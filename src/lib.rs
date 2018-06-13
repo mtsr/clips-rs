@@ -2,9 +2,7 @@ pub extern crate clips_sys;
 #[macro_use]
 extern crate failure;
 
-use failure::Fail;
-use std::ffi::{CStr, CString};
-use std::fmt;
+use std::ffi::CStr;
 use std::marker;
 
 #[derive(Debug, Fail)]
@@ -62,7 +60,7 @@ impl<'env> Iterator for InstanceIterator<'env> {
   fn next(&mut self) -> Option<Self::Item> {
     self.current = unsafe { clips_sys::GetNextInstance(self.env.raw, self.current) };
 
-    if (self.current.is_null()) {
+    if self.current.is_null() {
       return None;
     };
 
