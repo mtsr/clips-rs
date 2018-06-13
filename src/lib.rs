@@ -162,12 +162,6 @@ pub fn create_environment() -> Result<Environment, failure::Error> {
     })
 }
 
-// impl fmt::Debug for Environment {
-//   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//     write!(f, "Environment {{ raw: {:#?} }}", unsafe { *(self.raw) })
-//   }
-// }
-
 impl Drop for Environment {
   fn drop(&mut self) {
     unsafe { clips_sys::DestroyEnvironment(self.raw) };
