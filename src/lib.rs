@@ -47,6 +47,10 @@ impl Environment {
       current: std::ptr::null_mut::<clips_sys::Instance>(),
     }
   }
+
+  pub fn command_loop(&mut self) {
+    unsafe { clips_sys::CommandLoop(self.raw) };
+  }
 }
 
 pub struct InstanceIterator<'env> {
