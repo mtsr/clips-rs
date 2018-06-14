@@ -51,6 +51,10 @@ impl Environment {
   pub fn command_loop(&mut self) {
     unsafe { clips_sys::CommandLoop(self.raw) };
   }
+
+  pub fn route_command(&mut self, command: &str) {
+    unsafe { clips_sys::RouteCommand(self.raw, command.as_ptr() as *const i8, true) };
+  }
 }
 
 pub struct InstanceIterator<'env> {
