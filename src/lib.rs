@@ -41,7 +41,7 @@ impl Environment {
     unsafe { clips_sys::Run(self.raw, limit) };
   }
 
-  pub fn get_instance_iter(&self) -> impl Iterator<Item = Instance> {
+  pub fn instances_iter(&self) -> impl Iterator<Item = Instance> {
     InstanceIterator {
       env: self,
       current: std::ptr::null_mut::<clips_sys::Instance>(),
@@ -91,7 +91,7 @@ pub struct Instance<'env> {
 }
 
 impl<'env> Instance<'env> {
-  pub fn get_name(&'env self) -> &'env str {
+  pub fn name(&'env self) -> &'env str {
     unsafe {
       CStr::from_ptr(
         (*self.raw)
@@ -106,7 +106,7 @@ impl<'env> Instance<'env> {
     }
   }
 
-  pub fn get_slot_names(&'env self) -> Vec<String> {
+  pub fn slot_names(&'env self) -> Vec<String> {
     let num_slots = unsafe {
       self
         .raw
@@ -127,7 +127,7 @@ impl<'env> Instance<'env> {
         raw: unsafe { slot.as_ref().unwrap() },
         _marker: marker::PhantomData,
       })
-      .map(|slot| slot.get_name().to_owned())
+      .map(|slot| slot.name().to_owned())
       .collect::<Vec<_>>()
   }
 }
@@ -139,7 +139,7 @@ pub struct InstanceSlot<'inst> {
 }
 
 impl<'inst> InstanceSlot<'inst> {
-  pub fn get_name(&self) -> &str {
+  pub fn name(&self) -> &str {
     unsafe {
       CStr::from_ptr(
         self
