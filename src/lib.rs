@@ -85,7 +85,6 @@ impl Environment {
     return_types: Option<Type>,
     min_args: u16,
     max_args: u16,
-    default_arg_type: Option<Type>,
     arg_types: Vec<Type>,
     function: F,
   ) -> Result<(), failure::Error>
@@ -98,6 +97,16 @@ impl Environment {
     let function: Box<Box<FnMut(&mut Self, &mut UDFContext, &mut UDFValue)>> =
       Box::new(Box::new(function));
 
+    let arg_types = &CString::new(
+      arg_types
+        .iter()
+        .map(|type_bitflag| -> String { type_bitflag.format() })
+        .collect::<Vec<String>>()
+        .join(";"),
+    ).unwrap();
+
+    println!("{:#?}", arg_types);
+
     let error = unsafe {
       clips_sys::AddUDF(
         self.raw,
@@ -105,7 +114,7 @@ impl Environment {
         std::ptr::null(), // return_types
         min_args,
         max_args,
-        std::ptr::null(), // argument types
+        arg_types.as_ptr(),
         Some(udf_handler),
         name.as_ptr() as *const i8, // name of the 'real function' that's purely for debugging
         Box::into_raw(function) as *mut _,
@@ -148,21 +157,22 @@ extern "C" fn udf_handler(
     raw: raw_context,
     _marker: marker::PhantomData,
   };
-  let mut return_value = UDFValue {
-    raw: return_value,
-    _marker: marker::PhantomData,
-  };
+  let mut return_value = UDFValue::from_raw(return_value);
 
   closure(&mut environment, &mut context, &mut return_value);
 }
 
 pub struct ArgumentIterator<'env> {
   context: &'env UDFContext<'env>,
+  first: bool,
 }
 
 impl<'env> ArgumentIterator<'env> {
   pub fn new(context: &'env UDFContext) -> Self {
-    ArgumentIterator { context }
+    ArgumentIterator {
+      context,
+      first: true,
+    }
   }
 }
 
@@ -170,7 +180,23 @@ impl<'env> Iterator for ArgumentIterator<'env> {
   type Item = UDFValue<'env>;
 
   fn next(&mut self) -> Option<Self::Item> {
-    return None;
+    let mut out_value = UDFValue::new();
+
+    let has_next = if self.first {
+      self.first = false;
+      unsafe {
+        clips_sys::UDFFirstArgument(self.context.raw, Type::all().bits(), out_value.raw_mut())
+      }
+    } else {
+      unsafe {
+        clips_sys::UDFNextArgument(self.context.raw, Type::all().bits(), out_value.raw_mut())
+      }
+    };
+
+    if !has_next {
+      return None;
+    }
+    Some(out_value)
   }
 }
 
@@ -187,39 +213,119 @@ impl<'env> UDFContext<'env> {
 }
 
 #[derive(Debug)]
-pub struct UDFValue<'env> {
-  raw: *mut clips_sys::UDFValue,
-  _marker: marker::PhantomData<&'env Environment>,
+// pub struct UDFValue<'env> {
+//   raw: *mut clips_sys::UDFValue,
+//   _marker: marker::PhantomData<&'env Environment>,
+// }
+pub enum UDFValue<'env> {
+  Owned(clips_sys::UDFValue),
+  Borrowed(
+    *mut clips_sys::UDFValue,
+    marker::PhantomData<&'env Environment>,
+  ),
 }
 
 impl<'env> UDFValue<'env> {
+  pub fn new() -> UDFValue<'env> {
+    UDFValue::Owned(clips_sys::UDFValue {
+      supplementalInfo: std::ptr::null_mut(),
+      __bindgen_anon_1: clips_sys::udfValue__bindgen_ty_1 {
+        value: clips_sys::__BindgenUnionField::new(),
+        header: clips_sys::__BindgenUnionField::new(),
+        lexemeValue: clips_sys::__BindgenUnionField::new(),
+        floatValue: clips_sys::__BindgenUnionField::new(),
+        integerValue: clips_sys::__BindgenUnionField::new(),
+        voidValue: clips_sys::__BindgenUnionField::new(),
+        multifieldValue: clips_sys::__BindgenUnionField::new(),
+        factValue: clips_sys::__BindgenUnionField::new(),
+        instanceValue: clips_sys::__BindgenUnionField::new(),
+        externalAddressValue: clips_sys::__BindgenUnionField::new(),
+        bindgen_union_field: 0,
+      },
+      begin: 0,
+      range: 0,
+      next: std::ptr::null_mut(),
+    })
+  }
+
+  pub fn from_raw(raw: *mut clips_sys::UDFValue) -> UDFValue<'env> {
+    UDFValue::Borrowed(raw, marker::PhantomData)
+  }
+
   pub fn set_void(&mut self, env: &Environment) {
-    unsafe {
-      (*(*self.raw).__bindgen_anon_1.voidValue.as_mut()) = env.void_constant();
+    let udf_value = match self {
+      UDFValue::Owned(mut inner) => unsafe {
+        (*inner.__bindgen_anon_1.voidValue.as_mut()) = env.void_constant()
+      },
+      UDFValue::Borrowed(mut raw, _) => unsafe {
+        (*raw.as_mut().unwrap().__bindgen_anon_1.voidValue.as_mut()) = env.void_constant()
+      },
+    };
+  }
+
+  pub fn lexeme(&self) -> &str {
+    match self {
+      UDFValue::Owned(inner) => unsafe {
+        CStr::from_ptr(
+          inner
+            .__bindgen_anon_1
+            .lexemeValue
+            .as_ref()
+            .as_ref()
+            .unwrap()
+            .contents
+            .as_ref()
+            .unwrap(),
+        ).to_str()
+          .unwrap()
+      },
+      UDFValue::Borrowed(raw, _) => unsafe {
+        CStr::from_ptr(
+          raw
+            .as_ref()
+            .unwrap()
+            .__bindgen_anon_1
+            .lexemeValue
+            .as_ref()
+            .as_ref()
+            .unwrap()
+            .contents
+            .as_ref()
+            .unwrap(),
+        ).to_str()
+          .unwrap()
+      },
+    }
+  }
+
+  pub fn raw_mut(&mut self) -> *mut clips_sys::UDFValue {
+    match self {
+      UDFValue::Owned(udf_value) => udf_value as *mut clips_sys::UDFValue,
+      UDFValue::Borrowed(raw, _) => *raw,
     }
   }
 }
 
 bitflags! {
     pub struct Type: u32 {
-        const BOOLEAN = 0b00000000_00000001;
-        const DP_FLOAT = 0b00000000_00000010;
-        const EXTERNAL_ADDRESS = 0b00000000_00000100;
-        const FACT_ADDRESS = 0b00000000_00001000;
-        const INSTANCE_ADDRESS = 0b00000000_00010000;
-        const LL_INTEGER = 0b00000000_00100000;
-        const MULTIFIELD = 0b00000000_10000000;
-        const INSTANCE_NAME = 0b00000001_00000000;
-        const STRING = 0b0000010_00000000;
-        const SYMBOL = 0b00000100_00000000;
-        const VOID = 0b00001000_00000000;
-        const ANY = 0b00010000_00000000;
+        const FLOAT = clips_sys::CLIPSType::FLOAT_BIT as u32;
+        const INTEGER = clips_sys::CLIPSType::INTEGER_BIT as u32;
+        const SYMBOL = clips_sys::CLIPSType::SYMBOL_BIT as u32;
+        const STRING = clips_sys::CLIPSType::STRING_BIT as u32;
+        const MULTIFIELD = clips_sys::CLIPSType::MULTIFIELD_BIT as u32;
+        const EXTERNAL_ADDRESS = clips_sys::CLIPSType::EXTERNAL_ADDRESS_BIT as u32;
+        const FACT_ADDRESS = clips_sys::CLIPSType::FACT_ADDRESS_BIT as u32;
+        const INSTANCE_ADDRESS = clips_sys::CLIPSType::INSTANCE_ADDRESS_BIT as u32;
+        const INSTANCE_NAME = clips_sys::CLIPSType::INSTANCE_NAME_BIT as u32;
+        const VOID = clips_sys::CLIPSType::VOID_BIT as u32;
+        const BOOLEAN = clips_sys::CLIPSType::BOOLEAN_BIT as u32;
+        const ANY = 0b0;
     }
 }
 
-impl Into<String> for Type {
-  fn into(self) -> String {
-    if self.is_empty() {
+impl Type {
+  fn format(self) -> String {
+    if self.is_empty() || self.contains(Self::ANY) {
       return "*".to_owned();
     }
 
@@ -228,7 +334,7 @@ impl Into<String> for Type {
     if self.contains(Self::BOOLEAN) {
       result.push('b')
     }
-    if self.contains(Self::DP_FLOAT) {
+    if self.contains(Self::FLOAT) {
       result.push('d')
     }
     if self.contains(Self::EXTERNAL_ADDRESS) {
@@ -240,7 +346,7 @@ impl Into<String> for Type {
     if self.contains(Self::INSTANCE_ADDRESS) {
       result.push('i')
     }
-    if self.contains(Self::LL_INTEGER) {
+    if self.contains(Self::INTEGER) {
       result.push('l')
     }
     if self.contains(Self::MULTIFIELD) {
