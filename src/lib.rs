@@ -103,7 +103,8 @@ impl Environment {
         .map(|type_bitflag| -> String { type_bitflag.format() })
         .collect::<Vec<String>>()
         .join(";"),
-    ).unwrap();
+    )
+    .unwrap();
 
     println!("{:#?}", arg_types);
 
@@ -122,11 +123,12 @@ impl Environment {
     };
 
     match error {
-      clips_sys::AddUDFError::AUE_NO_ERROR => Ok(()),
-      clips_sys::AddUDFError::AUE_MIN_EXCEEDS_MAX_ERROR => Err(ClipsError::SomeError.into()),
-      clips_sys::AddUDFError::AUE_FUNCTION_NAME_IN_USE_ERROR => Err(ClipsError::SomeError.into()),
-      clips_sys::AddUDFError::AUE_INVALID_ARGUMENT_TYPE_ERROR => Err(ClipsError::SomeError.into()),
-      clips_sys::AddUDFError::AUE_INVALID_RETURN_TYPE_ERROR => Err(ClipsError::SomeError.into()),
+      clips_sys::AddUDFError_AUE_NO_ERROR => Ok(()),
+      clips_sys::AddUDFError_AUE_MIN_EXCEEDS_MAX_ERROR => Err(ClipsError::SomeError.into()),
+      clips_sys::AddUDFError_AUE_FUNCTION_NAME_IN_USE_ERROR => Err(ClipsError::SomeError.into()),
+      clips_sys::AddUDFError_AUE_INVALID_ARGUMENT_TYPE_ERROR => Err(ClipsError::SomeError.into()),
+      clips_sys::AddUDFError_AUE_INVALID_RETURN_TYPE_ERROR => Err(ClipsError::SomeError.into()),
+      _ => unimplemented!(),
     }
   }
 
@@ -229,19 +231,7 @@ impl<'env> UDFValue<'env> {
   pub fn new() -> UDFValue<'env> {
     UDFValue::Owned(clips_sys::UDFValue {
       supplementalInfo: std::ptr::null_mut(),
-      __bindgen_anon_1: clips_sys::udfValue__bindgen_ty_1 {
-        value: clips_sys::__BindgenUnionField::new(),
-        header: clips_sys::__BindgenUnionField::new(),
-        lexemeValue: clips_sys::__BindgenUnionField::new(),
-        floatValue: clips_sys::__BindgenUnionField::new(),
-        integerValue: clips_sys::__BindgenUnionField::new(),
-        voidValue: clips_sys::__BindgenUnionField::new(),
-        multifieldValue: clips_sys::__BindgenUnionField::new(),
-        factValue: clips_sys::__BindgenUnionField::new(),
-        instanceValue: clips_sys::__BindgenUnionField::new(),
-        externalAddressValue: clips_sys::__BindgenUnionField::new(),
-        bindgen_union_field: 0,
-      },
+      __bindgen_anon_1: unsafe { std::mem::zeroed::<clips_sys::udfValue__bindgen_ty_1>() },
       begin: 0,
       range: 0,
       next: std::ptr::null_mut(),
@@ -255,10 +245,10 @@ impl<'env> UDFValue<'env> {
   pub fn set_void(&mut self, env: &Environment) {
     let udf_value = match self {
       UDFValue::Owned(mut inner) => unsafe {
-        (*inner.__bindgen_anon_1.voidValue.as_mut()) = env.void_constant()
+        inner.__bindgen_anon_1.voidValue = env.void_constant()
       },
       UDFValue::Borrowed(mut raw, _) => unsafe {
-        (*raw.as_mut().unwrap().__bindgen_anon_1.voidValue.as_mut()) = env.void_constant()
+        raw.as_mut().unwrap().__bindgen_anon_1.voidValue = env.void_constant()
       },
     };
   }
@@ -276,8 +266,9 @@ impl<'env> UDFValue<'env> {
             .contents
             .as_ref()
             .unwrap(),
-        ).to_str()
-          .unwrap()
+        )
+        .to_str()
+        .unwrap()
       },
       UDFValue::Borrowed(raw, _) => unsafe {
         CStr::from_ptr(
@@ -292,8 +283,9 @@ impl<'env> UDFValue<'env> {
             .contents
             .as_ref()
             .unwrap(),
-        ).to_str()
-          .unwrap()
+        )
+        .to_str()
+        .unwrap()
       },
     }
   }
@@ -308,17 +300,17 @@ impl<'env> UDFValue<'env> {
 
 bitflags! {
     pub struct Type: u32 {
-        const FLOAT = clips_sys::CLIPSType::FLOAT_BIT as u32;
-        const INTEGER = clips_sys::CLIPSType::INTEGER_BIT as u32;
-        const SYMBOL = clips_sys::CLIPSType::SYMBOL_BIT as u32;
-        const STRING = clips_sys::CLIPSType::STRING_BIT as u32;
-        const MULTIFIELD = clips_sys::CLIPSType::MULTIFIELD_BIT as u32;
-        const EXTERNAL_ADDRESS = clips_sys::CLIPSType::EXTERNAL_ADDRESS_BIT as u32;
-        const FACT_ADDRESS = clips_sys::CLIPSType::FACT_ADDRESS_BIT as u32;
-        const INSTANCE_ADDRESS = clips_sys::CLIPSType::INSTANCE_ADDRESS_BIT as u32;
-        const INSTANCE_NAME = clips_sys::CLIPSType::INSTANCE_NAME_BIT as u32;
-        const VOID = clips_sys::CLIPSType::VOID_BIT as u32;
-        const BOOLEAN = clips_sys::CLIPSType::BOOLEAN_BIT as u32;
+        const FLOAT = clips_sys::CLIPSType_FLOAT_BIT as u32;
+        const INTEGER = clips_sys::CLIPSType_INTEGER_BIT as u32;
+        const SYMBOL = clips_sys::CLIPSType_SYMBOL_BIT as u32;
+        const STRING = clips_sys::CLIPSType_STRING_BIT as u32;
+        const MULTIFIELD = clips_sys::CLIPSType_MULTIFIELD_BIT as u32;
+        const EXTERNAL_ADDRESS = clips_sys::CLIPSType_EXTERNAL_ADDRESS_BIT as u32;
+        const FACT_ADDRESS = clips_sys::CLIPSType_FACT_ADDRESS_BIT as u32;
+        const INSTANCE_ADDRESS = clips_sys::CLIPSType_INSTANCE_ADDRESS_BIT as u32;
+        const INSTANCE_NAME = clips_sys::CLIPSType_INSTANCE_NAME_BIT as u32;
+        const VOID = clips_sys::CLIPSType_VOID_BIT as u32;
+        const BOOLEAN = clips_sys::CLIPSType_BOOLEAN_BIT as u32;
         const ANY = 0b0;
     }
 }
@@ -413,8 +405,9 @@ impl<'env> Instance<'env> {
           .contents
           .as_ref()
           .unwrap(),
-      ).to_str()
-        .unwrap()
+      )
+      .to_str()
+      .unwrap()
     }
   }
 
@@ -468,8 +461,9 @@ impl<'inst> InstanceSlot<'inst> {
           .contents
           .as_ref()
           .unwrap(),
-      ).to_str()
-        .unwrap()
+      )
+      .to_str()
+      .unwrap()
     }
   }
 }

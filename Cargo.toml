@@ -4,5 +4,4 @@ version = "0.1.0"
 authors = ["Jonas Matser <jonas@jonasmatser.nl>"]
 
 [dependencies]
-"clips-sys" = { git = "https://github.com/mtsr/clips-sys" }
-"failure" = "0.1.1"
+"bitflags" = "1.0.4"
