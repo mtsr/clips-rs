@@ -82,7 +82,7 @@ impl Environment {
   pub fn add_udf<F /*, T*/>(
     &mut self,
     name: &str,
-    return_types: Option<Type>,
+    _return_types: Option<Type>,
     min_args: u16,
     max_args: u16,
     arg_types: Vec<Type>,
@@ -247,7 +247,7 @@ impl<'env> UDFValue<'env> {
   pub fn set_void(&mut self, env: &Environment) {
     match self {
       UDFValue::Owned(mut inner) => inner.__bindgen_anon_1.voidValue = env.void_constant(),
-      UDFValue::Borrowed(mut raw, _) => unsafe {
+      UDFValue::Borrowed(raw, _) => unsafe {
         raw.as_mut().unwrap().__bindgen_anon_1.voidValue = env.void_constant()
       },
     };
