@@ -5,6 +5,5 @@ authors = ["Jonas Matser <jonas@jonasmatser.nl>"]
 
 [dependencies]
 "clips-sys" = { git = "https://github.com/mtsr/clips-sys" }
-# "clips-sys" = { path = "../clips-sys" }
 "failure" = "0.1.3"
 "bitflags" = "1.0.4"
