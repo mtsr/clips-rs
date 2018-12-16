@@ -106,8 +106,6 @@ impl Environment {
     )
     .unwrap();
 
-    println!("{:#?}", arg_types);
-
     let error = unsafe {
       clips_sys::AddUDF(
         self.raw,
