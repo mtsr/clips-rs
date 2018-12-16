@@ -150,8 +150,10 @@ extern "C" fn udf_handler(
   raw_context: *mut clips_sys::UDFContext,
   return_value: *mut clips_sys::UDFValue,
 ) {
-  let closure: &mut Box<FnMut(&mut Environment, &mut UDFContext, &mut UDFValue)> =
-    unsafe { std::mem::transmute(raw_context.as_ref().unwrap().context) };
+  let closure: &mut Box<FnMut(&mut Environment, &mut UDFContext, &mut UDFValue)> = unsafe {
+    &mut *(raw_context.as_ref().unwrap().context
+      as *mut Box<dyn FnMut(&mut Environment, &mut UDFContext, &mut UDFValue)>)
+  };
   let mut environment = Environment::from_ptr(raw_environment);
   let mut context = UDFContext {
     raw: raw_context,
@@ -180,7 +182,7 @@ impl<'env> Iterator for ArgumentIterator<'env> {
   type Item = UDFValue<'env>;
 
   fn next(&mut self) -> Option<Self::Item> {
-    let mut out_value = UDFValue::new();
+    let mut out_value: Self::Item = Default::default();
 
     let has_next = if self.first {
       self.first = false;
@@ -225,8 +227,8 @@ pub enum UDFValue<'env> {
   ),
 }
 
-impl<'env> UDFValue<'env> {
-  pub fn new() -> UDFValue<'env> {
+impl<'env> Default for UDFValue<'env> {
+  fn default() -> Self {
     UDFValue::Owned(clips_sys::UDFValue {
       supplementalInfo: std::ptr::null_mut(),
       __bindgen_anon_1: unsafe { std::mem::zeroed::<clips_sys::udfValue__bindgen_ty_1>() },
@@ -235,16 +237,16 @@ impl<'env> UDFValue<'env> {
       next: std::ptr::null_mut(),
     })
   }
+}
 
+impl<'env> UDFValue<'env> {
   pub fn from_raw(raw: *mut clips_sys::UDFValue) -> UDFValue<'env> {
     UDFValue::Borrowed(raw, marker::PhantomData)
   }
 
   pub fn set_void(&mut self, env: &Environment) {
-    let udf_value = match self {
-      UDFValue::Owned(mut inner) => unsafe {
-        inner.__bindgen_anon_1.voidValue = env.void_constant()
-      },
+    match self {
+      UDFValue::Owned(mut inner) => inner.__bindgen_anon_1.voidValue = env.void_constant(),
       UDFValue::Borrowed(mut raw, _) => unsafe {
         raw.as_mut().unwrap().__bindgen_anon_1.voidValue = env.void_constant()
       },
@@ -468,7 +470,7 @@ impl<'inst> InstanceSlot<'inst> {
 
 pub fn create_environment() -> Result<Environment, failure::Error> {
   unsafe { clips_sys::CreateEnvironment().as_mut() }
-    .ok_or(ClipsError::SomeError.into())
+    .ok_or_else(|| ClipsError::SomeError.into())
     .map(|environment_data| Environment {
       raw: environment_data,
       cleanup: true,
