@@ -1,5 +1,12 @@
 [package]
 name = "clips"
+description = "(More) idiomatic Rust wrapper around CLIPS-sys"
+repository = "https://github.com/mtsr/clips-rs"
+documentation = "https://docs.rs/clips/"
+readme = "README.md"
+keywords = ["clips", "rete", "rules", "rules-engine", "expert-system"]
+categories = ["api-bindings"]
+license = "MIT"
 version = "0.1.0"
 authors = ["Jonas Matser <crates@jonasmatser.nl>"]
 
