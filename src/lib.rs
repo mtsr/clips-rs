@@ -166,17 +166,13 @@ extern "C" fn udf_handler(
 
 pub struct ArgumentIterator<'env> {
   context: &'env UDFContext<'env>,
-  first: bool,
 }
 
 impl<'env> ArgumentIterator<'env> {
   pub fn new(context: &'env UDFContext) -> Self {
-    ArgumentIterator {
-      context,
-      first: true,
+    ArgumentIterator { context }
     }
   }
-}
 
 impl<'env> Iterator for ArgumentIterator<'env> {
   type Item = UDFValue<'env>;
@@ -184,21 +180,15 @@ impl<'env> Iterator for ArgumentIterator<'env> {
   fn next(&mut self) -> Option<Self::Item> {
     let mut out_value: Self::Item = Default::default();
 
-    let has_next = if self.first {
-      self.first = false;
+    if self.context.has_next_argument() {
       unsafe {
-        clips_sys::UDFFirstArgument(self.context.raw, Type::all().bits(), out_value.raw_mut())
+        clips_sys::UDFNextArgument(self.context.raw, Type::all().bits(), out_value.raw_mut());
       }
-    } else {
-      unsafe {
-        clips_sys::UDFNextArgument(self.context.raw, Type::all().bits(), out_value.raw_mut())
-      }
-    };
 
-    if !has_next {
-      return None;
+      return Some(out_value);
     }
-    Some(out_value)
+
+    None
   }
 }
 
