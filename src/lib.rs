@@ -47,8 +47,8 @@ impl Environment {
     unsafe { clips_sys::Reset(self.raw) };
   }
 
-  pub fn run(&mut self, limit: i64) {
-    unsafe { clips_sys::Run(self.raw, limit) };
+  pub fn run(&mut self, limit: i64) -> i64 {
+    unsafe { clips_sys::Run(self.raw, limit) }
   }
 
   pub fn instances_iter(&self) -> impl Iterator<Item = Instance> {
