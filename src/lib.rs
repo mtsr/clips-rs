@@ -202,6 +202,10 @@ impl<'env> UDFContext<'env> {
   pub fn argument_iter(&'env self) -> ArgumentIterator<'env> {
     ArgumentIterator::new(self)
   }
+
+  pub fn has_next_argument(&'env self) -> bool {
+    unsafe { !(*self.raw).lastArg.is_null() }
+  }
 }
 
 #[derive(Debug)]
