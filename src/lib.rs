@@ -7,6 +7,11 @@ extern crate bitflags;
 use std::ffi::{CStr, CString};
 use std::marker;
 
+pub enum SaveScope {
+  Local = clips_sys::SaveScope_LOCAL_SAVE as isize,
+  Visible = clips_sys::SaveScope_VISIBLE_SAVE as isize,
+}
+
 #[derive(Debug, Fail)]
 pub enum ClipsError {
   #[fail(display = "oh no")]
@@ -141,6 +146,11 @@ impl Environment {
 
   fn void_constant(&self) -> *mut clips_sys::CLIPSVoid {
     unsafe { (*self.raw).VoidConstant }
+  }
+
+  pub fn save_instances(&mut self, filename: &str, scope: SaveScope) -> i64 {
+    let filename = CString::new(filename).unwrap();
+    unsafe { clips_sys::SaveInstances(self.raw, filename.as_ptr() as *const i8, scope as u32) }
   }
 }
 
