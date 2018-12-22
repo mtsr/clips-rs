@@ -87,7 +87,7 @@ impl Environment {
   pub fn add_udf<F /*, T*/>(
     &mut self,
     name: &str,
-    _return_types: Option<Type>,
+    return_types: Option<Type>,
     min_args: u16,
     max_args: u16,
     arg_types: Vec<Type>,
@@ -115,7 +115,10 @@ impl Environment {
       clips_sys::AddUDF(
         self.raw,
         name.as_ptr() as *const i8,
-        std::ptr::null(), // return_types
+        match return_types {
+          Some(return_types) => return_types.format().as_ptr() as *const i8,
+          None => std::ptr::null(),
+        },
         min_args,
         max_args,
         arg_types.as_ptr(),
@@ -190,8 +193,8 @@ pub struct ArgumentIterator<'env> {
 impl<'env> ArgumentIterator<'env> {
   pub fn new(context: &'env UDFContext) -> Self {
     ArgumentIterator { context }
-    }
   }
+}
 
 impl<'env> Iterator for ArgumentIterator<'env> {
   type Item = UDFValue<'env>;
