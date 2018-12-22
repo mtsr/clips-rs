@@ -152,6 +152,15 @@ impl Environment {
     let filename = CString::new(filename).unwrap();
     unsafe { clips_sys::SaveInstances(self.raw, filename.as_ptr() as *const i8, scope as u32) }
   }
+
+  pub fn batch_star(&mut self, filename: &str) -> Result<(), failure::Error> {
+    let filename = CString::new(filename).unwrap();
+    if unsafe { clips_sys::BatchStar(self.raw, filename.as_ptr() as *const i8) } {
+      Ok(())
+    } else {
+      Err(ClipsError::SomeError.into())
+    }
+  }
 }
 
 // https://stackoverflow.com/questions/32270030/how-do-i-convert-a-rust-closure-to-a-c-style-callback#32270215
