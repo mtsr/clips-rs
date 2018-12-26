@@ -94,12 +94,12 @@ impl Environment {
     function: F,
   ) -> Result<(), failure::Error>
   where
-    F: FnMut(&mut Self, &mut UDFContext, &mut UDFValue),
+    F: FnMut(&mut Self, &mut UDFContext, &mut InnerUDFValue),
     F: 'static,
   {
     let name = CString::new(name).unwrap();
 
-    let function: Box<Box<FnMut(&mut Self, &mut UDFContext, &mut UDFValue)>> =
+    let function: Box<Box<FnMut(&mut Self, &mut UDFContext, &mut InnerUDFValue)>> =
       Box::new(Box::new(function));
 
     let arg_types = &CString::new(
@@ -172,16 +172,16 @@ extern "C" fn udf_handler(
   raw_context: *mut clips_sys::UDFContext,
   return_value: *mut clips_sys::UDFValue,
 ) {
-  let closure: &mut Box<FnMut(&mut Environment, &mut UDFContext, &mut UDFValue)> = unsafe {
+  let closure: &mut Box<FnMut(&mut Environment, &mut UDFContext, &mut InnerUDFValue)> = unsafe {
     &mut *(raw_context.as_ref().unwrap().context
-      as *mut Box<dyn FnMut(&mut Environment, &mut UDFContext, &mut UDFValue)>)
+      as *mut Box<dyn FnMut(&mut Environment, &mut UDFContext, &mut InnerUDFValue)>)
   };
   let mut environment = Environment::from_ptr(raw_environment);
   let mut context = UDFContext {
     raw: raw_context,
     _marker: marker::PhantomData,
   };
-  let mut return_value = UDFValue::from_raw(return_value);
+  let mut return_value = InnerUDFValue::from_raw(return_value);
 
   closure(&mut environment, &mut context, &mut return_value);
 }
@@ -197,7 +197,7 @@ impl<'env> ArgumentIterator<'env> {
 }
 
 impl<'env> Iterator for ArgumentIterator<'env> {
-  type Item = UDFValue<'env>;
+  type Item = InnerUDFValue<'env>;
 
   fn next(&mut self) -> Option<Self::Item> {
     let mut out_value: Self::Item = Default::default();
@@ -230,12 +230,43 @@ impl<'env> UDFContext<'env> {
   }
 }
 
+enum ClipsValue {}
+struct ExternalAddress;
+
+pub enum UDFValue<'env> {
+  Lexeme(String),
+  Float(f64),
+  Integer(i64),
+  Void(),
+  Multifield(Vec<ClipsValue>),
+  Fact(Fact<'env>),
+  Instance(Instance<'env>),
+  ExternalAddress(ExternalAddress),
+}
+
+impl<'env> From<*mut clips_sys::UDFValue> for UDFValue<'env> {
+  fn from(udf_value: *mut clips_sys::UDFValue) -> Self {
+    match *(*udf_value).__bindgen_anon_1.header._type {
+      clips_sys::FLOAT_TYPE => {}
+      clips_sys::INTEGER_TYPE => {}
+      clips_sys::SYMBOL_TYPE => {}
+      clips_sys::STRING_TYPE => {}
+      clips_sys::MULTIFIELD_TYPE => {}
+      clips_sys::EXTERNAL_ADDRESS_TYPE => {}
+      clips_sys::FACT_ADDRESS_TYPE => {}
+      clips_sys::INSTANCE_ADDRESS_TYPE => {}
+      clips_sys::INSTANCE_NAME_TYPE => {}
+      clips_sys::VOID_TYPE => {}
+    }
+  }
+}
+
 #[derive(Debug)]
-// pub struct UDFValue<'env> {
+// pub struct InnerUDFValue<'env> {
 //   raw: *mut clips_sys::UDFValue,
 //   _marker: marker::PhantomData<&'env Environment>,
 // }
-pub enum UDFValue<'env> {
+enum InnerUDFValue<'env> {
   Owned(clips_sys::UDFValue),
   Borrowed(
     *mut clips_sys::UDFValue,
@@ -243,9 +274,9 @@ pub enum UDFValue<'env> {
   ),
 }
 
-impl<'env> Default for UDFValue<'env> {
+impl<'env> Default for InnerUDFValue<'env> {
   fn default() -> Self {
-    UDFValue::Owned(clips_sys::UDFValue {
+    InnerUDFValue::Owned(clips_sys::UDFValue {
       supplementalInfo: std::ptr::null_mut(),
       __bindgen_anon_1: unsafe { std::mem::zeroed::<clips_sys::udfValue__bindgen_ty_1>() },
       begin: 0,
@@ -255,15 +286,15 @@ impl<'env> Default for UDFValue<'env> {
   }
 }
 
-impl<'env> UDFValue<'env> {
-  pub fn from_raw(raw: *mut clips_sys::UDFValue) -> UDFValue<'env> {
-    UDFValue::Borrowed(raw, marker::PhantomData)
+impl<'env> InnerUDFValue<'env> {
+  pub fn from_raw(raw: *mut clips_sys::UDFValue) -> InnerUDFValue<'env> {
+    InnerUDFValue::Borrowed(raw, marker::PhantomData)
   }
 
   pub fn set_void(&mut self, env: &Environment) {
     match self {
-      UDFValue::Owned(mut inner) => inner.__bindgen_anon_1.voidValue = env.void_constant(),
-      UDFValue::Borrowed(raw, _) => unsafe {
+      InnerUDFValue::Owned(mut inner) => inner.__bindgen_anon_1.voidValue = env.void_constant(),
+      InnerUDFValue::Borrowed(raw, _) => unsafe {
         raw.as_mut().unwrap().__bindgen_anon_1.voidValue = env.void_constant()
       },
     };
@@ -271,7 +302,7 @@ impl<'env> UDFValue<'env> {
 
   pub fn lexeme(&self) -> &str {
     match self {
-      UDFValue::Owned(inner) => unsafe {
+      InnerUDFValue::Owned(inner) => unsafe {
         CStr::from_ptr(
           inner
             .__bindgen_anon_1
@@ -286,7 +317,7 @@ impl<'env> UDFValue<'env> {
         .to_str()
         .unwrap()
       },
-      UDFValue::Borrowed(raw, _) => unsafe {
+      InnerUDFValue::Borrowed(raw, _) => unsafe {
         CStr::from_ptr(
           raw
             .as_ref()
@@ -308,8 +339,8 @@ impl<'env> UDFValue<'env> {
 
   pub fn raw_mut(&mut self) -> *mut clips_sys::UDFValue {
     match self {
-      UDFValue::Owned(udf_value) => udf_value as *mut clips_sys::UDFValue,
-      UDFValue::Borrowed(raw, _) => *raw,
+      InnerUDFValue::Owned(udf_value) => udf_value as *mut clips_sys::UDFValue,
+      InnerUDFValue::Borrowed(raw, _) => *raw,
     }
   }
 }
@@ -400,8 +431,9 @@ impl<'env> Iterator for InstanceIterator<'env> {
 }
 
 #[derive(Debug)]
-pub struct Fact {
+pub struct Fact<'env> {
   raw: *const clips_sys::Fact,
+  marker::PhantomData<&'env Environment>,
 }
 
 #[derive(Debug)]
