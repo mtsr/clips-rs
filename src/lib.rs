@@ -247,7 +247,9 @@ pub enum UDFValue<'env> {
 impl<'env> From<*mut clips_sys::UDFValue> for UDFValue<'env> {
   fn from(udf_value: *mut clips_sys::UDFValue) -> Self {
     match *(*udf_value).__bindgen_anon_1.header._type {
-      clips_sys::FLOAT_TYPE => {}
+      clips_sys::FLOAT_TYPE => {
+        Lexeme()
+      }
       clips_sys::INTEGER_TYPE => {}
       clips_sys::SYMBOL_TYPE => {}
       clips_sys::STRING_TYPE => {}
