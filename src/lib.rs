@@ -289,16 +289,16 @@ trait SetFrom<T> {
 impl<'env> SetFrom<(&'env Environment, UDFValue<'env>)> for clips_sys::UDFValue {
   fn set_from(&mut self, (env, udf_value): (&'env Environment, UDFValue<'env>)) {
     match udf_value {
-      UDFValue::Symbol(symbol) => unimplemented!("Symbol"),
-      UDFValue::Lexeme(lexeme) => unimplemented!("Lexeme"),
-      UDFValue::Float(float) => unimplemented!("Float"),
-      UDFValue::Integer(integer) => unimplemented!("Integer"),
+      UDFValue::Symbol(_symbol) => unimplemented!("Symbol"),
+      UDFValue::Lexeme(_lexeme) => unimplemented!("Lexeme"),
+      UDFValue::Float(_float) => unimplemented!("Float"),
+      UDFValue::Integer(_integer) => unimplemented!("Integer"),
       UDFValue::Void() => self.__bindgen_anon_1.voidValue = env.void_constant(),
-      UDFValue::Multifield(values) => unimplemented!("Multifield"),
-      UDFValue::Fact(fact) => unimplemented!("Fact"),
-      UDFValue::Instance(instance) => unimplemented!("Instance"),
-      UDFValue::InstanceName(instance) => unimplemented!("Instance"),
-      UDFValue::ExternalAddress(address) => unimplemented!("ExternalAddress"),
+      UDFValue::Multifield(_values) => unimplemented!("Multifield"),
+      UDFValue::Fact(_fact) => unimplemented!("Fact"),
+      UDFValue::Instance(_instance) => unimplemented!("Instance"),
+      UDFValue::InstanceName(_instance) => unimplemented!("Instance"),
+      UDFValue::ExternalAddress(_address) => unimplemented!("ExternalAddress"),
     }
   }
 }
