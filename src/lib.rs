@@ -200,6 +200,7 @@ impl<'env> Iterator for ArgumentIterator<'env> {
   type Item = UDFValue<'env>;
 
   fn next(&mut self) -> Option<Self::Item> {
+    // Create empty clips::UDFValue for CLIPS to write to
     let mut out_value: clips_sys::UDFValue = Default::default();
 
     if self.context.has_next_argument() {
@@ -208,6 +209,7 @@ impl<'env> Iterator for ArgumentIterator<'env> {
         clips_sys::UDFNextArgument(self.context.raw, Type::all().bits(), &mut out_value);
       }
 
+      // Convert clips_sys::UDFValue into clips::UDFValue
       return Some(out_value.into());
     }
 
