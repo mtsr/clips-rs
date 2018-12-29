@@ -238,20 +238,6 @@ pub enum ClipsValue {}
 #[derive(Debug)]
 pub struct ExternalAddress;
 
-// pub union udfValue__bindgen_ty_1 {
-//     pub value: *mut ::std::os::raw::c_void,
-//     pub header: *mut TypeHeader,
-//     pub lexemeValue: *mut CLIPSLexeme,
-//     pub floatValue: *mut CLIPSFloat,
-//     pub integerValue: *mut CLIPSInteger,
-//     pub voidValue: *mut CLIPSVoid,
-//     pub multifieldValue: *mut Multifield,
-//     pub factValue: *mut Fact,
-//     pub instanceValue: *mut Instance,
-//     pub externalAddressValue: *mut CLIPSExternalAddress,
-//     _bindgen_union_align: u64,
-// }
-
 #[derive(Debug)]
 pub enum UDFValue<'env> {
   Symbol(Cow<'env, str>),
