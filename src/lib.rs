@@ -94,12 +94,12 @@ impl Environment {
     function: F,
   ) -> Result<(), failure::Error>
   where
-    F: FnMut(&mut Self, &mut UDFContext, &mut InnerUDFValue),
+    F: FnMut(&mut Self, &mut UDFContext, &mut UDFValue),
     F: 'static,
   {
     let name = CString::new(name).unwrap();
 
-    let function: Box<Box<FnMut(&mut Self, &mut UDFContext, &mut InnerUDFValue)>> =
+    let function: Box<Box<FnMut(&mut Self, &mut UDFContext, &mut UDFValue)>> =
       Box::new(Box::new(function));
 
     let arg_types = &CString::new(
@@ -113,18 +113,18 @@ impl Environment {
 
     let error = unsafe {
       clips_sys::AddUDF(
-        self.raw,
-        name.as_ptr() as *const i8,
+        self.raw,                   // environment pointer
+        name.as_ptr() as *const i8, // CString with function name
         match return_types {
           Some(return_types) => return_types.format().as_ptr() as *const i8,
           None => std::ptr::null(),
-        },
-        min_args,
-        max_args,
-        arg_types.as_ptr(),
-        Some(udf_handler),
+        }, // CString with CLIPS return types
+        min_args,                   // Min number of arguments that needs to be passed to UDF
+        max_args,                   // Max number of arguments that can be passed to UDF
+        arg_types.as_ptr(),         // String with required argument types
+        Some(udf_handler),          // Wrapper extern C fn that calls Rust Fn
         name.as_ptr() as *const i8, // name of the 'real function' that's purely for debugging
-        Box::into_raw(function) as *mut _,
+        Box::into_raw(function) as *mut _, // UDF Context contains pointer to Rust Fn for use by handler
       )
     };
 
@@ -172,18 +172,25 @@ extern "C" fn udf_handler(
   raw_context: *mut clips_sys::UDFContext,
   return_value: *mut clips_sys::UDFValue,
 ) {
-  let closure: &mut Box<FnMut(&mut Environment, &mut UDFContext, &mut InnerUDFValue)> = unsafe {
+  let closure: &mut Box<FnMut(&mut Environment, &mut UDFContext, &mut UDFValue)> = unsafe {
     &mut *(raw_context.as_ref().unwrap().context
-      as *mut Box<dyn FnMut(&mut Environment, &mut UDFContext, &mut InnerUDFValue)>)
+      as *mut Box<dyn FnMut(&mut Environment, &mut UDFContext, &mut UDFValue)>)
   };
   let mut environment = Environment::from_ptr(raw_environment);
   let mut context = UDFContext {
     raw: raw_context,
     _marker: marker::PhantomData,
   };
-  let mut return_value = InnerUDFValue::from_raw(return_value);
 
-  closure(&mut environment, &mut context, &mut return_value);
+  // Convert clips_sys::udfValue into clips::UDFValue
+  let rust_return_value = &mut unsafe { (*return_value) }.into();
+  closure(&mut environment, &mut context, rust_return_value);
+  // and vice versa
+  let mut union = unsafe { (*return_value).__bindgen_anon_1 };
+  match rust_return_value {
+    UDFValue::Void() => union.voidValue = environment.void_constant(),
+    _ => unimplemented!(),
+  };
 }
 
 pub struct ArgumentIterator<'env> {
@@ -197,17 +204,17 @@ impl<'env> ArgumentIterator<'env> {
 }
 
 impl<'env> Iterator for ArgumentIterator<'env> {
-  type Item = InnerUDFValue<'env>;
+  type Item = UDFValue<'env>;
 
   fn next(&mut self) -> Option<Self::Item> {
-    let mut out_value: Self::Item = Default::default();
+    let mut out_value: clips_sys::UDFValue = Default::default();
 
     if self.context.has_next_argument() {
       unsafe {
-        clips_sys::UDFNextArgument(self.context.raw, Type::all().bits(), out_value.raw_mut());
+        clips_sys::UDFNextArgument(self.context.raw, Type::all().bits(), &mut out_value);
       }
 
-      return Some(out_value);
+      return Some(out_value.into());
     }
 
     None
@@ -230,10 +237,28 @@ impl<'env> UDFContext<'env> {
   }
 }
 
-enum ClipsValue {}
-struct ExternalAddress;
+#[derive(Debug)]
+pub enum ClipsValue {}
+#[derive(Debug)]
+pub struct ExternalAddress;
 
+// pub union udfValue__bindgen_ty_1 {
+//     pub value: *mut ::std::os::raw::c_void,
+//     pub header: *mut TypeHeader,
+//     pub lexemeValue: *mut CLIPSLexeme,
+//     pub floatValue: *mut CLIPSFloat,
+//     pub integerValue: *mut CLIPSInteger,
+//     pub voidValue: *mut CLIPSVoid,
+//     pub multifieldValue: *mut Multifield,
+//     pub factValue: *mut Fact,
+//     pub instanceValue: *mut Instance,
+//     pub externalAddressValue: *mut CLIPSExternalAddress,
+//     _bindgen_union_align: u64,
+// }
+
+#[derive(Debug)]
 pub enum UDFValue<'env> {
+  Symbol(String),
   Lexeme(String),
   Float(f64),
   Integer(i64),
@@ -244,22 +269,33 @@ pub enum UDFValue<'env> {
   ExternalAddress(ExternalAddress),
 }
 
-impl<'env> From<*mut clips_sys::UDFValue> for UDFValue<'env> {
-  fn from(udf_value: *mut clips_sys::UDFValue) -> Self {
-    match *(*udf_value).__bindgen_anon_1.header._type {
-      clips_sys::FLOAT_TYPE => {
-        Lexeme()
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+impl<'env> From<clips_sys::UDFValue> for UDFValue<'env> {
+  fn from(udf_value: clips_sys::UDFValue) -> Self {
+    let union = udf_value.__bindgen_anon_1;
+
+    match unsafe { (*udf_value.__bindgen_anon_1.header).type_ } as u32 {
+      clips_sys::FLOAT_TYPE => unimplemented!("float"),
+      clips_sys::INTEGER_TYPE => unimplemented!("integer"),
+      clips_sys::SYMBOL_TYPE => UDFValue::Symbol("symbol".to_owned()),
+      clips_sys::STRING_TYPE => {
+        let value = unsafe { CStr::from_ptr((*union.lexemeValue).contents) }.to_string_lossy();
+        UDFValue::Lexeme(value.into())
       }
-      clips_sys::INTEGER_TYPE => {}
-      clips_sys::SYMBOL_TYPE => {}
-      clips_sys::STRING_TYPE => {}
-      clips_sys::MULTIFIELD_TYPE => {}
-      clips_sys::EXTERNAL_ADDRESS_TYPE => {}
-      clips_sys::FACT_ADDRESS_TYPE => {}
-      clips_sys::INSTANCE_ADDRESS_TYPE => {}
-      clips_sys::INSTANCE_NAME_TYPE => {}
-      clips_sys::VOID_TYPE => {}
+      clips_sys::MULTIFIELD_TYPE => unimplemented!("multifield"),
+      clips_sys::EXTERNAL_ADDRESS_TYPE => unimplemented!("external address"),
+      clips_sys::FACT_ADDRESS_TYPE => unimplemented!("fact address"),
+      clips_sys::INSTANCE_ADDRESS_TYPE => unimplemented!("instance address"),
+      clips_sys::INSTANCE_NAME_TYPE => unimplemented!("instance name"),
+      clips_sys::VOID_TYPE => UDFValue::Void(),
+      _ => panic!(),
     }
+  }
+}
+
+impl<'env> From<UDFValue<'env>> for clips_sys::UDFValue {
+  fn from(udf_value: UDFValue) -> Self {
+    unimplemented!()
   }
 }
 
@@ -268,7 +304,7 @@ impl<'env> From<*mut clips_sys::UDFValue> for UDFValue<'env> {
 //   raw: *mut clips_sys::UDFValue,
 //   _marker: marker::PhantomData<&'env Environment>,
 // }
-enum InnerUDFValue<'env> {
+pub enum InnerUDFValue<'env> {
   Owned(clips_sys::UDFValue),
   Borrowed(
     *mut clips_sys::UDFValue,
@@ -435,7 +471,7 @@ impl<'env> Iterator for InstanceIterator<'env> {
 #[derive(Debug)]
 pub struct Fact<'env> {
   raw: *const clips_sys::Fact,
-  marker::PhantomData<&'env Environment>,
+  _marker: marker::PhantomData<&'env Environment>,
 }
 
 #[derive(Debug)]
