@@ -4,6 +4,7 @@ extern crate failure;
 #[macro_use]
 extern crate bitflags;
 
+use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 use std::marker;
 
@@ -182,7 +183,7 @@ extern "C" fn udf_handler(
 
   let rust_return_value = closure(&mut environment, &mut context);
   // and vice versa
-  unsafe { *return_value = rust_return_value.into() };
+  unsafe { (*return_value) }.set_from((&environment, rust_return_value));
 }
 
 pub struct ArgumentIterator<'env> {
@@ -203,6 +204,7 @@ impl<'env> Iterator for ArgumentIterator<'env> {
 
     if self.context.has_next_argument() {
       unsafe {
+        // TODO specify argument types
         clips_sys::UDFNextArgument(self.context.raw, Type::all().bits(), &mut out_value);
       }
 
@@ -250,13 +252,14 @@ pub struct ExternalAddress;
 
 #[derive(Debug)]
 pub enum UDFValue<'env> {
-  Symbol(String),
-  Lexeme(String),
+  Symbol(Cow<'env, str>),
+  Lexeme(Cow<'env, str>),
   Float(f64),
   Integer(i64),
   Void(),
   Multifield(Vec<ClipsValue>),
   Fact(Fact<'env>),
+  InstanceName(Cow<'env, str>),
   Instance(Instance<'env>),
   ExternalAddress(ExternalAddress),
 }
@@ -269,108 +272,45 @@ impl<'env> From<clips_sys::UDFValue> for UDFValue<'env> {
     match u32::from(unsafe { (*udf_value.__bindgen_anon_1.header).type_ }) {
       clips_sys::FLOAT_TYPE => unimplemented!("float"),
       clips_sys::INTEGER_TYPE => unimplemented!("integer"),
-      clips_sys::SYMBOL_TYPE => UDFValue::Symbol("symbol".to_owned()),
+      clips_sys::SYMBOL_TYPE => {
+        let value = unsafe { CStr::from_ptr((*union.lexemeValue).contents) }.to_string_lossy();
+        UDFValue::Symbol(value)
+      }
       clips_sys::STRING_TYPE => {
         let value = unsafe { CStr::from_ptr((*union.lexemeValue).contents) }.to_string_lossy();
-        UDFValue::Lexeme(value.into())
+        UDFValue::Lexeme(value)
       }
       clips_sys::MULTIFIELD_TYPE => unimplemented!("multifield"),
       clips_sys::EXTERNAL_ADDRESS_TYPE => unimplemented!("external address"),
       clips_sys::FACT_ADDRESS_TYPE => unimplemented!("fact address"),
       clips_sys::INSTANCE_ADDRESS_TYPE => unimplemented!("instance address"),
-      clips_sys::INSTANCE_NAME_TYPE => unimplemented!("instance name"),
+      clips_sys::INSTANCE_NAME_TYPE => {
+        let value = unsafe { CStr::from_ptr((*union.lexemeValue).contents) }.to_string_lossy();
+        UDFValue::InstanceName(value)
+      }
       clips_sys::VOID_TYPE => UDFValue::Void(),
       _ => panic!(),
     }
   }
 }
 
-impl<'env> From<UDFValue<'env>> for clips_sys::UDFValue {
-  fn from(udf_value: UDFValue) -> Self {
-    unimplemented!("casting back")
-  }
+trait SetFrom<T> {
+  fn set_from(&mut self, T);
 }
 
-#[derive(Debug)]
-// pub struct InnerUDFValue<'env> {
-//   raw: *mut clips_sys::UDFValue,
-//   _marker: marker::PhantomData<&'env Environment>,
-// }
-pub enum InnerUDFValue<'env> {
-  Owned(clips_sys::UDFValue),
-  Borrowed(
-    *mut clips_sys::UDFValue,
-    marker::PhantomData<&'env Environment>,
-  ),
-}
-
-impl<'env> Default for InnerUDFValue<'env> {
-  fn default() -> Self {
-    InnerUDFValue::Owned(clips_sys::UDFValue {
-      supplementalInfo: std::ptr::null_mut(),
-      __bindgen_anon_1: unsafe { std::mem::zeroed::<clips_sys::udfValue__bindgen_ty_1>() },
-      begin: 0,
-      range: 0,
-      next: std::ptr::null_mut(),
-    })
-  }
-}
-
-impl<'env> InnerUDFValue<'env> {
-  pub fn from_raw(raw: *mut clips_sys::UDFValue) -> InnerUDFValue<'env> {
-    InnerUDFValue::Borrowed(raw, marker::PhantomData)
-  }
-
-  pub fn set_void(&mut self, env: &Environment) {
-    match self {
-      InnerUDFValue::Owned(mut inner) => inner.__bindgen_anon_1.voidValue = env.void_constant(),
-      InnerUDFValue::Borrowed(raw, _) => unsafe {
-        raw.as_mut().unwrap().__bindgen_anon_1.voidValue = env.void_constant()
-      },
-    };
-  }
-
-  pub fn lexeme(&self) -> &str {
-    match self {
-      InnerUDFValue::Owned(inner) => unsafe {
-        CStr::from_ptr(
-          inner
-            .__bindgen_anon_1
-            .lexemeValue
-            .as_ref()
-            .as_ref()
-            .unwrap()
-            .contents
-            .as_ref()
-            .unwrap(),
-        )
-        .to_str()
-        .unwrap()
-      },
-      InnerUDFValue::Borrowed(raw, _) => unsafe {
-        CStr::from_ptr(
-          raw
-            .as_ref()
-            .unwrap()
-            .__bindgen_anon_1
-            .lexemeValue
-            .as_ref()
-            .as_ref()
-            .unwrap()
-            .contents
-            .as_ref()
-            .unwrap(),
-        )
-        .to_str()
-        .unwrap()
-      },
-    }
-  }
-
-  pub fn raw_mut(&mut self) -> *mut clips_sys::UDFValue {
-    match self {
-      InnerUDFValue::Owned(udf_value) => udf_value as *mut clips_sys::UDFValue,
-      InnerUDFValue::Borrowed(raw, _) => *raw,
+impl<'env> SetFrom<(&'env Environment, UDFValue<'env>)> for clips_sys::UDFValue {
+  fn set_from(&mut self, (env, udf_value): (&'env Environment, UDFValue<'env>)) {
+    match udf_value {
+      UDFValue::Symbol(symbol) => unimplemented!("Symbol"),
+      UDFValue::Lexeme(lexeme) => unimplemented!("Lexeme"),
+      UDFValue::Float(float) => unimplemented!("Float"),
+      UDFValue::Integer(integer) => unimplemented!("Integer"),
+      UDFValue::Void() => self.__bindgen_anon_1.voidValue = env.void_constant(),
+      UDFValue::Multifield(values) => unimplemented!("Multifield"),
+      UDFValue::Fact(fact) => unimplemented!("Fact"),
+      UDFValue::Instance(instance) => unimplemented!("Instance"),
+      UDFValue::InstanceName(instance) => unimplemented!("Instance"),
+      UDFValue::ExternalAddress(address) => unimplemented!("ExternalAddress"),
     }
   }
 }
