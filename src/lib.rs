@@ -182,7 +182,7 @@ extern "C" fn udf_handler(
   };
 
   let rust_return_value = closure(&mut environment, &mut context);
-  // and vice versa
+  // Set value from clips::UDFValue on clips_sys::UDFValue
   unsafe { (*return_value) }.set_from((&environment, rust_return_value));
 }
 
