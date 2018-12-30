@@ -259,7 +259,10 @@ impl<'env> From<clips_sys::UDFValue> for UDFValue<'env> {
 
     match u32::from(unsafe { (*udf_value.__bindgen_anon_1.header).type_ }) {
       clips_sys::FLOAT_TYPE => unimplemented!("float"),
-      clips_sys::INTEGER_TYPE => unimplemented!("integer"),
+      clips_sys::INTEGER_TYPE => {
+        let value = unsafe { (*union.integerValue).contents };
+        UDFValue::Integer(value)
+      }
       clips_sys::SYMBOL_TYPE => {
         let value = unsafe { CStr::from_ptr((*union.lexemeValue).contents) }.to_string_lossy();
         UDFValue::Symbol(value)
