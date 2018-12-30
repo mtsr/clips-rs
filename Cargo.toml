@@ -7,11 +7,11 @@ readme = "README.md"
 keywords = ["clips", "rete", "rules", "rules-engine", "expert-system"]
 categories = ["api-bindings"]
 license = "MIT"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Jonas Matser <crates@jonasmatser.nl>"]
 
 [dependencies.clips-sys]
-version = "0.1.0"
+version = "0.3.0"
 
 [dependencies.failure]
 version = "0.1.3"
