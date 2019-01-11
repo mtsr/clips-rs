@@ -92,7 +92,7 @@ impl Environment {
     min_args: u16,
     max_args: u16,
     arg_types: Vec<Type>,
-    function: &dyn FnMut(&mut Self, &mut UDFContext) -> UDFValue<'static>,
+    function: &dyn FnMut(&mut Self, &mut UDFContext) -> ClipsValue<'static>,
   ) -> Result<(), failure::Error>
 where {
     let name = CString::new(name).unwrap();
@@ -173,7 +173,7 @@ extern "C" fn udf_handler(
   let closure = unsafe {
     &mut *(raw_context.as_ref().unwrap().context
       // Double Box because Box<FnMut> is a Trait Object i.e. fat pointer
-      as *mut Box<Box<FnMut(&mut Environment, &mut UDFContext) -> UDFValue<'static>>>)
+      as *mut Box<Box<FnMut(&mut Environment, &mut UDFContext) -> ClipsValue<'static>>>)
   };
   let mut environment = Environment::from_ptr(raw_environment);
   let mut context = UDFContext {
@@ -182,7 +182,7 @@ extern "C" fn udf_handler(
   };
 
   let rust_return_value = closure(&mut environment, &mut context);
-  // Set value from clips::UDFValue on clips_sys::UDFValue
+  // Set value from clips::ClipsValue on clips_sys::UDFValue
   unsafe { (*return_value) }.set_from((&environment, rust_return_value));
 }
 
@@ -197,7 +197,7 @@ impl<'env> ArgumentIterator<'env> {
 }
 
 impl<'env> Iterator for ArgumentIterator<'env> {
-  type Item = UDFValue<'env>;
+  type Item = ClipsValue<'env>;
 
   fn next(&mut self) -> Option<Self::Item> {
     // Create empty clips::UDFValue for CLIPS to write to
@@ -234,18 +234,16 @@ impl<'env> UDFContext<'env> {
 }
 
 #[derive(Debug)]
-pub enum ClipsValue {}
-#[derive(Debug)]
 pub struct ExternalAddress;
 
 #[derive(Debug)]
-pub enum UDFValue<'env> {
+pub enum ClipsValue<'env> {
   Symbol(Cow<'env, str>),
   Lexeme(Cow<'env, str>),
   Float(f64),
   Integer(i64),
   Void(),
-  Multifield(Vec<ClipsValue>),
+  Multifield(Vec<ClipsValue<'env>>),
   Fact(Fact<'env>),
   InstanceName(Cow<'env, str>),
   Instance(Instance<'env>),
@@ -253,7 +251,7 @@ pub enum UDFValue<'env> {
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-impl<'env> From<clips_sys::UDFValue> for UDFValue<'env> {
+impl<'env> From<clips_sys::UDFValue> for ClipsValue<'env> {
   fn from(udf_value: clips_sys::UDFValue) -> Self {
     let union = udf_value.__bindgen_anon_1;
 
@@ -261,15 +259,15 @@ impl<'env> From<clips_sys::UDFValue> for UDFValue<'env> {
       clips_sys::FLOAT_TYPE => unimplemented!("float"),
       clips_sys::INTEGER_TYPE => {
         let value = unsafe { (*union.integerValue).contents };
-        UDFValue::Integer(value)
+        ClipsValue::Integer(value)
       }
       clips_sys::SYMBOL_TYPE => {
         let value = unsafe { CStr::from_ptr((*union.lexemeValue).contents) }.to_string_lossy();
-        UDFValue::Symbol(value)
+        ClipsValue::Symbol(value)
       }
       clips_sys::STRING_TYPE => {
         let value = unsafe { CStr::from_ptr((*union.lexemeValue).contents) }.to_string_lossy();
-        UDFValue::Lexeme(value)
+        ClipsValue::Lexeme(value)
       }
       clips_sys::MULTIFIELD_TYPE => unimplemented!("multifield"),
       clips_sys::EXTERNAL_ADDRESS_TYPE => unimplemented!("external address"),
@@ -277,9 +275,9 @@ impl<'env> From<clips_sys::UDFValue> for UDFValue<'env> {
       clips_sys::INSTANCE_ADDRESS_TYPE => unimplemented!("instance address"),
       clips_sys::INSTANCE_NAME_TYPE => {
         let value = unsafe { CStr::from_ptr((*union.lexemeValue).contents) }.to_string_lossy();
-        UDFValue::InstanceName(value)
+        ClipsValue::InstanceName(value)
       }
-      clips_sys::VOID_TYPE => UDFValue::Void(),
+      clips_sys::VOID_TYPE => ClipsValue::Void(),
       _ => panic!(),
     }
   }
@@ -289,19 +287,19 @@ trait SetFrom<T> {
   fn set_from(&mut self, T);
 }
 
-impl<'env> SetFrom<(&'env Environment, UDFValue<'env>)> for clips_sys::UDFValue {
-  fn set_from(&mut self, (env, udf_value): (&'env Environment, UDFValue<'env>)) {
-    match udf_value {
-      UDFValue::Symbol(_symbol) => unimplemented!("Symbol"),
-      UDFValue::Lexeme(_lexeme) => unimplemented!("Lexeme"),
-      UDFValue::Float(_float) => unimplemented!("Float"),
-      UDFValue::Integer(_integer) => unimplemented!("Integer"),
-      UDFValue::Void() => self.__bindgen_anon_1.voidValue = env.void_constant(),
-      UDFValue::Multifield(_values) => unimplemented!("Multifield"),
-      UDFValue::Fact(_fact) => unimplemented!("Fact"),
-      UDFValue::Instance(_instance) => unimplemented!("Instance"),
-      UDFValue::InstanceName(_instance) => unimplemented!("Instance"),
-      UDFValue::ExternalAddress(_address) => unimplemented!("ExternalAddress"),
+impl<'env> SetFrom<(&'env Environment, ClipsValue<'env>)> for clips_sys::UDFValue {
+  fn set_from(&mut self, (env, clips_value): (&'env Environment, ClipsValue<'env>)) {
+    match clips_value {
+      ClipsValue::Symbol(_symbol) => unimplemented!("Symbol"),
+      ClipsValue::Lexeme(_lexeme) => unimplemented!("Lexeme"),
+      ClipsValue::Float(_float) => unimplemented!("Float"),
+      ClipsValue::Integer(_integer) => unimplemented!("Integer"),
+      ClipsValue::Void() => self.__bindgen_anon_1.voidValue = env.void_constant(),
+      ClipsValue::Multifield(_values) => unimplemented!("Multifield"),
+      ClipsValue::Fact(_fact) => unimplemented!("Fact"),
+      ClipsValue::Instance(_instance) => unimplemented!("Instance"),
+      ClipsValue::InstanceName(_instance) => unimplemented!("Instance"),
+      ClipsValue::ExternalAddress(_address) => unimplemented!("ExternalAddress"),
     }
   }
 }
