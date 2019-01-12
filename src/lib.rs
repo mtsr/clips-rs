@@ -250,13 +250,15 @@ pub enum ClipsValue<'env> {
   ExternalAddress(ExternalAddress),
 }
 
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-impl<'env> From<clips_sys::UDFValue> for ClipsValue<'env> {
-  fn from(udf_value: clips_sys::UDFValue) -> Self {
-    let union = udf_value.__bindgen_anon_1;
+impl<'env> From<clips_sys::clipsValue> for ClipsValue<'env> {
+  fn from(clips_value: clips_sys::clipsValue) -> Self {
+    let union = clips_value.__bindgen_anon_1;
 
-    match u32::from(unsafe { (*udf_value.__bindgen_anon_1.header).type_ }) {
-      clips_sys::FLOAT_TYPE => unimplemented!("float"),
+    match u32::from(unsafe { (*clips_value.__bindgen_anon_1.header).type_ }) {
+      clips_sys::FLOAT_TYPE => {
+        let value = unsafe { (*union.floatValue).contents };
+        ClipsValue::Float(value)
+      }
       clips_sys::INTEGER_TYPE => {
         let value = unsafe { (*union.integerValue).contents };
         ClipsValue::Integer(value)
@@ -269,7 +271,115 @@ impl<'env> From<clips_sys::UDFValue> for ClipsValue<'env> {
         let value = unsafe { CStr::from_ptr((*union.lexemeValue).contents) }.to_string_lossy();
         ClipsValue::Lexeme(value)
       }
-      clips_sys::MULTIFIELD_TYPE => unimplemented!("multifield"),
+      clips_sys::MULTIFIELD_TYPE => {
+        let multifield = unsafe { *union.multifieldValue };
+        ClipsValue::Multifield(
+          (0..multifield.length)
+            .map(|index| unsafe { *multifield.contents.get_unchecked(index) }.into())
+            .collect::<Vec<_>>(),
+        )
+      }
+      clips_sys::EXTERNAL_ADDRESS_TYPE => unimplemented!("external address"),
+      clips_sys::FACT_ADDRESS_TYPE => unimplemented!("fact address"),
+      clips_sys::INSTANCE_ADDRESS_TYPE => unimplemented!("instance address"),
+      clips_sys::INSTANCE_NAME_TYPE => {
+        let value = unsafe { CStr::from_ptr((*union.lexemeValue).contents) }.to_string_lossy();
+        ClipsValue::InstanceName(value)
+      }
+      clips_sys::VOID_TYPE => ClipsValue::Void(),
+      _ => {
+        println!(
+          "{:?}",
+          u32::from(unsafe { (*clips_value.__bindgen_anon_1.header).type_ })
+        );
+        panic!()
+      }
+    }
+  }
+}
+
+impl<'env> From<clips_sys::UDFValue> for ClipsValue<'env> {
+  fn from(udf_value: clips_sys::UDFValue) -> Self {
+    let union = udf_value.__bindgen_anon_1;
+
+    match u32::from(unsafe { (*udf_value.__bindgen_anon_1.header).type_ }) {
+      clips_sys::FLOAT_TYPE => {
+        let value = unsafe { (*union.floatValue).contents };
+        ClipsValue::Float(value)
+      }
+      clips_sys::INTEGER_TYPE => {
+        let value = unsafe { (*union.integerValue).contents };
+        ClipsValue::Integer(value)
+      }
+      clips_sys::SYMBOL_TYPE => {
+        let value = unsafe { CStr::from_ptr((*union.lexemeValue).contents) }.to_string_lossy();
+        ClipsValue::Symbol(value)
+      }
+      clips_sys::STRING_TYPE => {
+        let value = unsafe { CStr::from_ptr((*union.lexemeValue).contents) }.to_string_lossy();
+        ClipsValue::Lexeme(value)
+      }
+      clips_sys::MULTIFIELD_TYPE => {
+        let multifield = unsafe { *union.multifieldValue };
+        ClipsValue::Multifield(
+          (0..multifield.length)
+            .map(|index| unsafe { *multifield.contents.get_unchecked(index) }.into())
+            .collect::<Vec<_>>(),
+        )
+      }
+      clips_sys::EXTERNAL_ADDRESS_TYPE => unimplemented!("external address"),
+      clips_sys::FACT_ADDRESS_TYPE => unimplemented!("fact address"),
+      clips_sys::INSTANCE_ADDRESS_TYPE => unimplemented!("instance address"),
+      clips_sys::INSTANCE_NAME_TYPE => {
+        let value = unsafe { CStr::from_ptr((*union.lexemeValue).contents) }.to_string_lossy();
+        ClipsValue::InstanceName(value)
+      }
+      clips_sys::VOID_TYPE => ClipsValue::Void(),
+      _ => panic!(),
+    }
+  }
+}
+
+impl<'env> From<clips_sys::instanceSlot> for ClipsValue<'env> {
+  fn from(instance_slot: clips_sys::instanceSlot) -> Self {
+    let union = instance_slot.__bindgen_anon_1;
+
+    match u32::from(instance_slot.type_) {
+      clips_sys::FLOAT_TYPE => {
+        let value = unsafe { (*union.floatValue).contents };
+        ClipsValue::Float(value)
+      }
+      clips_sys::INTEGER_TYPE => {
+        let value = unsafe { (*union.integerValue).contents };
+        ClipsValue::Integer(value)
+      }
+      clips_sys::SYMBOL_TYPE => {
+        let value = unsafe { CStr::from_ptr((*union.lexemeValue).contents) }.to_string_lossy();
+        ClipsValue::Symbol(value)
+      }
+      clips_sys::STRING_TYPE => {
+        let value = unsafe { CStr::from_ptr((*union.lexemeValue).contents) }.to_string_lossy();
+        ClipsValue::Lexeme(value)
+      }
+      clips_sys::MULTIFIELD_TYPE => {
+        // let mut multifield = unsafe { *union.multifieldValue };
+        // println!("{:p}", unsafe { multifield.contents.get_unchecked_mut(0) });
+        // ClipsValue::Multifield(
+        //   (0..multifield.length)
+        //     .map(|index| {
+        //       let next = unsafe { multifield.contents.get_unchecked_mut(index) };
+        //       println!(
+        //         "{:?} {:p} {:?}",
+        //         index,
+        //         next,
+        //         std::mem::size_of::<clips_sys::clipsValue>()
+        //       );
+        //       (*next).into()
+        //     })
+        //     .collect::<Vec<_>>(),
+        // )
+        ClipsValue::Void()
+      }
       clips_sys::EXTERNAL_ADDRESS_TYPE => unimplemented!("external address"),
       clips_sys::FACT_ADDRESS_TYPE => unimplemented!("fact address"),
       clips_sys::INSTANCE_ADDRESS_TYPE => unimplemented!("instance address"),
@@ -419,6 +529,18 @@ impl<'env> Instance<'env> {
   }
 
   pub fn slot_names(&'env self) -> Vec<String> {
+    self
+      .slot_addresses()
+      .iter()
+      .map(|slot| InstanceSlot {
+        raw: *slot,
+        _marker: marker::PhantomData,
+      })
+      .map(|slot| slot.name().to_owned())
+      .collect::<Vec<_>>()
+  }
+
+  fn slot_addresses(&'env self) -> &[*mut clips_sys::InstanceSlot] {
     let num_slots = unsafe {
       self
         .raw
@@ -430,32 +552,33 @@ impl<'env> Instance<'env> {
         .instanceSlotCount
     } as usize;
 
-    let slot_addresses =
-      unsafe { std::slice::from_raw_parts(self.raw.as_ref().unwrap().slotAddresses, num_slots) };
+    unsafe { std::slice::from_raw_parts(self.raw.as_ref().unwrap().slotAddresses, num_slots) }
+  }
 
-    slot_addresses
+  pub fn slots(&'env self) -> Vec<InstanceSlot<'env>> {
+    self
+      .slot_addresses()
       .iter()
       .map(|slot| InstanceSlot {
-        raw: unsafe { slot.as_ref().unwrap() },
+        raw: *slot,
         _marker: marker::PhantomData,
       })
-      .map(|slot| slot.name().to_owned())
+      .map(|slot| slot)
       .collect::<Vec<_>>()
   }
 }
 
 #[derive(Debug)]
-pub struct InstanceSlot<'inst> {
-  raw: &'inst clips_sys::InstanceSlot,
-  _marker: marker::PhantomData<&'inst Instance<'inst>>,
+pub struct InstanceSlot<'env> {
+  raw: *mut clips_sys::InstanceSlot,
+  _marker: marker::PhantomData<&'env Instance<'env>>,
 }
 
-impl<'inst> InstanceSlot<'inst> {
+impl<'env> InstanceSlot<'env> {
   pub fn name(&self) -> &str {
     unsafe {
       CStr::from_ptr(
-        self
-          .raw
+        (*self.raw)
           .desc
           .as_ref()
           .unwrap()
@@ -472,6 +595,10 @@ impl<'inst> InstanceSlot<'inst> {
       .to_str()
       .unwrap()
     }
+  }
+
+  pub fn value(&'env self) -> ClipsValue<'env> {
+    unsafe { (*self.raw) }.into()
   }
 }
 
