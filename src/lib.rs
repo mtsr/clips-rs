@@ -514,15 +514,15 @@ pub struct Instance<'env> {
 impl<'env> Instance<'env> {
   pub fn name(&'env self) -> &'env str {
     unsafe {
-      CStr::from_ptr(
-        (*self.raw)
-          .name
-          .as_ref()
+      CStr::from_ptr(clips_sys::InstanceName(self.raw))
+        .to_str()
           .unwrap()
-          .contents
-          .as_ref()
-          .unwrap(),
-      )
+    }
+  }
+
+  pub fn class_name(&'env self) -> &'env str {
+    unsafe {
+      CStr::from_ptr(clips_sys::DefclassName(clips_sys::InstanceClass(self.raw)))
       .to_str()
       .unwrap()
     }
