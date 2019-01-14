@@ -528,31 +528,36 @@ impl<'env> Instance<'env> {
     }
   }
 
-  pub fn slot_names(&'env self) -> Vec<String> {
-    self
-      .slot_addresses()
-      .iter()
-      .map(|slot| InstanceSlot {
-        raw: *slot,
-        _marker: marker::PhantomData,
+  fn slot_names_c(&'env self) -> Vec<*const i8> {
+    // TODO argument?
+    let inherit = true;
+
+    let mut slot_list: clips_sys::clipsValue = Default::default();
+    unsafe {
+      let class = clips_sys::InstanceClass(self.raw);
+      clips_sys::ClassSlots(class, &mut slot_list as *mut clips_sys::clipsValue, inherit)
+    };
+
+    let num_slots = unsafe { (*slot_list.__bindgen_anon_1.multifieldValue) }.length;
+
+    (0..num_slots)
+      .map(|index| unsafe {
+        (*(*slot_list.__bindgen_anon_1.multifieldValue)
+          .contents
+          .get_unchecked(index)
+          .__bindgen_anon_1
+          .lexemeValue)
+          .contents
       })
-      .map(|slot| slot.name().to_owned())
       .collect::<Vec<_>>()
   }
 
-  fn slot_addresses(&'env self) -> &[*mut clips_sys::InstanceSlot] {
-    let num_slots = unsafe {
+  pub fn slot_names(&'env self) -> Vec<Cow<'env, str>> {
       self
-        .raw
-        .as_ref()
-        .unwrap()
-        .cls
-        .as_ref()
-        .unwrap()
-        .instanceSlotCount
-    } as usize;
-
-    unsafe { std::slice::from_raw_parts(self.raw.as_ref().unwrap().slotAddresses, num_slots) }
+      .slot_names_c()
+      .iter()
+      .map(|cstr| unsafe { CStr::from_ptr(*cstr) }.to_string_lossy())
+      .collect::<Vec<_>>()
   }
 
   pub fn slots(&'env self) -> Vec<InstanceSlot<'env>> {
