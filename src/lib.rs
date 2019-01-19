@@ -102,6 +102,19 @@ impl Environment {
     }
   }
 
+  pub fn load(&mut self, path: &Path) -> Result<(), ClipsError> {
+    let path_str = CString::new(path.to_str().unwrap()).unwrap();
+    let load_error = unsafe { clips_sys::Load(self.raw, path_str.as_ptr() as *const i8) };
+
+    match load_error {
+      x if x == clips_sys::LoadError_LE_NO_ERROR => Ok(()),
+      x if x == clips_sys::LoadError_LE_OPEN_FILE_ERROR as u32 => {
+        Err(ClipsErrorKind::LoadOpenFileError(path.to_str().unwrap().to_owned()).into())
+      }
+      x if x == clips_sys::LoadError_LE_PARSING_ERROR as u32 => {
+        Err(ClipsErrorKind::LoadParsingError(path.to_str().unwrap().to_owned()).into())
+      }
+      _ => unreachable!(),
     }
   }
 
@@ -193,7 +206,9 @@ where {
       clips_sys::AddUDFError_AUE_INVALID_ARGUMENT_TYPE_ERROR => {
         Err(ClipsErrorKind::AddUDFInvalidArgumentTypeError(name.to_owned()).into())
       }
-      clips_sys::AddUDFError_AUE_INVALID_RETURN_TYPE_ERROR => Err(ClipsErrorKind::AddUDFInvalidReturnTypeError(name.to_owned()).into()),
+      clips_sys::AddUDFError_AUE_INVALID_RETURN_TYPE_ERROR => {
+        Err(ClipsErrorKind::AddUDFInvalidReturnTypeError(name.to_owned()).into())
+      }
       _ => unreachable!(),
     }
   }
