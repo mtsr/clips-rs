@@ -1,23 +1,76 @@
 pub extern crate clips_sys;
 #[macro_use]
-extern crate failure;
-#[macro_use]
 extern crate bitflags;
+#[macro_use]
+extern crate derive_more;
 
 use std::borrow::Cow;
+use std::error::Error;
 use std::ffi::{CStr, CString};
 use std::marker;
+use std::path::Path;
 
 pub enum SaveScope {
   Local = clips_sys::SaveScope_LOCAL_SAVE as isize,
   Visible = clips_sys::SaveScope_VISIBLE_SAVE as isize,
 }
 
-#[derive(Debug, Fail)]
-pub enum ClipsError {
-  #[fail(display = "oh no")]
-  SomeError,
+#[derive(Debug, Display)]
+#[display(fmt = "{}", kind)]
+pub struct ClipsError {
+  pub kind: ClipsErrorKind,
+  source: Option<Box<dyn Error + Send + Sync + 'static>>,
 }
+
+#[derive(Debug, Display)]
+pub enum ClipsErrorKind {
+  #[display(fmt = "Failed to create CLIPS environment")]
+  CreateEnvironmentError,
+  #[display(fmt = "Failed to clear CLIPS environment")]
+  ClearError,
+  #[display(fmt = "Failed to load from {}", "0")]
+  LoadFromStringError(String),
+  #[display(fmt = "Failed to remove User Defined Function")]
+  RemoveUDFError(String),
+  #[display(fmt = "Failed to batch load from file")]
+  BatchStarError(String),
+  #[display(fmt = "Failed to load from {}", "0")]
+  LoadOpenFileError(String),
+  #[display(fmt = "Failed to load from {}", "0")]
+  LoadParsingError(String),
+  #[display(fmt = "Failed to add UDF {}: Min exceeds max", "0")]
+  AddUDFMinExceedsMaxError(String),
+  #[display(fmt = "Failed to add UDF {}: Function name in use", "0")]
+  AddUDFFunctionNameInUseError(String),
+  #[display(fmt = "Failed to add UDF {}: Invalid Argument Type", "0")]
+  AddUDFInvalidArgumentTypeError(String),
+  #[display(fmt = "Failed to add UDF {}: Invalid Return Type", "0")]
+  AddUDFInvalidReturnTypeError(String),
+}
+
+impl Error for ClipsError {
+  fn source(&self) -> Option<&(dyn Error + 'static)> {
+    self
+      .source
+      .as_ref()
+      .map(|boxed| boxed.as_ref() as &(dyn Error + 'static))
+  }
+}
+
+impl From<ClipsErrorKind> for ClipsError {
+  fn from(kind: ClipsErrorKind) -> Self {
+    ClipsError { kind, source: None }
+  }
+}
+
+// impl ClipsError {
+//   fn load_error(err: impl Error + Send + Sync + 'static) -> Self {
+//     ClipsError {
+//       kind: ClipsErrorKind::LoadError,.into()
+//       source: Some(Box::new(err)),
+//     }
+//   }
+// }
 
 #[derive(Debug)]
 pub struct Environment {
@@ -33,19 +86,22 @@ impl Environment {
     }
   }
 
-  pub fn clear(&mut self) -> Result<(), failure::Error> {
+  pub fn clear(&mut self) -> Result<(), ClipsError> {
     if unsafe { clips_sys::Clear(self.raw) } {
       Ok(())
     } else {
-      Err(ClipsError::SomeError.into())
+      Err(ClipsErrorKind::ClearError.into())
     }
   }
 
-  pub fn load_from_str(&mut self, string: &str) -> Result<(), failure::Error> {
+  pub fn load_from_str(&mut self, string: &str) -> Result<(), ClipsError> {
     if unsafe { clips_sys::LoadFromString(self.raw, string.as_ptr() as *const i8, string.len()) } {
       Ok(())
     } else {
-      Err(ClipsError::SomeError.into())
+      Err(ClipsErrorKind::LoadFromStringError(string.to_owned()).into())
+    }
+  }
+
     }
   }
 
@@ -93,9 +149,9 @@ impl Environment {
     max_args: u16,
     arg_types: Vec<Type>,
     function: &dyn FnMut(&mut Self, &mut UDFContext) -> ClipsValue<'static>,
-  ) -> Result<(), failure::Error>
+  ) -> Result<(), ClipsError>
 where {
-    let name = CString::new(name).unwrap();
+    let c_name = CString::new(name).unwrap();
 
     // Double Box because Box<FnMut> is a Trait Object i.e. fat pointer
     let function = Box::new(Box::new(function));
@@ -111,37 +167,43 @@ where {
 
     let error = unsafe {
       clips_sys::AddUDF(
-        self.raw,                   // environment pointer
-        name.as_ptr() as *const i8, // CString with CLIPS function name to expose this UDF as
+        self.raw,                     // environment pointer
+        c_name.as_ptr() as *const i8, // CString with CLIPS function name to expose this UDF as
         match return_types {
           Some(return_types) => return_types.format().as_ptr() as *const i8,
           None => std::ptr::null(),
         }, // CString with CLIPS return types
-        min_args,                   // Min number of arguments that needs to be passed to UDF
-        max_args,                   // Max number of arguments that can be passed to UDF
-        arg_types.as_ptr(),         // String with required argument types
-        Some(udf_handler),          // Wrapper extern C fn that calls Rust Fn
-        name.as_ptr() as *const i8, // name of the 'real function' that's purely for debugging
+        min_args,                     // Min number of arguments that needs to be passed to UDF
+        max_args,                     // Max number of arguments that can be passed to UDF
+        arg_types.as_ptr(),           // String with required argument types
+        Some(udf_handler),            // Wrapper extern C fn that calls Rust Fn
+        c_name.as_ptr() as *const i8, // name of the 'real function' that's purely for debugging
         Box::into_raw(function) as *mut _, // UDF Context contains pointer to Rust Fn for use by handler
       )
     };
 
     match error {
       clips_sys::AddUDFError_AUE_NO_ERROR => Ok(()),
-      clips_sys::AddUDFError_AUE_MIN_EXCEEDS_MAX_ERROR => Err(ClipsError::SomeError.into()),
-      clips_sys::AddUDFError_AUE_FUNCTION_NAME_IN_USE_ERROR => Err(ClipsError::SomeError.into()),
-      clips_sys::AddUDFError_AUE_INVALID_ARGUMENT_TYPE_ERROR => Err(ClipsError::SomeError.into()),
-      clips_sys::AddUDFError_AUE_INVALID_RETURN_TYPE_ERROR => Err(ClipsError::SomeError.into()),
-      _ => unimplemented!(),
+      clips_sys::AddUDFError_AUE_MIN_EXCEEDS_MAX_ERROR => {
+        Err(ClipsErrorKind::AddUDFMinExceedsMaxError(name.to_owned()).into())
+      }
+      clips_sys::AddUDFError_AUE_FUNCTION_NAME_IN_USE_ERROR => {
+        Err(ClipsErrorKind::AddUDFFunctionNameInUseError(name.to_owned()).into())
+      }
+      clips_sys::AddUDFError_AUE_INVALID_ARGUMENT_TYPE_ERROR => {
+        Err(ClipsErrorKind::AddUDFInvalidArgumentTypeError(name.to_owned()).into())
+      }
+      clips_sys::AddUDFError_AUE_INVALID_RETURN_TYPE_ERROR => Err(ClipsErrorKind::AddUDFInvalidReturnTypeError(name.to_owned()).into()),
+      _ => unreachable!(),
     }
   }
 
-  pub fn remove_udf(&mut self, name: &str) -> Result<(), failure::Error> {
-    let name = CString::new(name).unwrap();
-    if unsafe { clips_sys::RemoveUDF(self.raw, name.as_ptr() as *const i8) } {
+  pub fn remove_udf(&mut self, name: &str) -> Result<(), ClipsError> {
+    let c_name = CString::new(name).unwrap();
+    if unsafe { clips_sys::RemoveUDF(self.raw, c_name.as_ptr() as *const i8) } {
       Ok(())
     } else {
-      Err(ClipsError::SomeError.into())
+      Err(ClipsErrorKind::RemoveUDFError(name.to_owned()).into())
     }
   }
 
@@ -154,12 +216,12 @@ where {
     unsafe { clips_sys::SaveInstances(self.raw, filename.as_ptr() as *const i8, scope as u32) }
   }
 
-  pub fn batch_star(&mut self, filename: &str) -> Result<(), failure::Error> {
-    let filename = CString::new(filename).unwrap();
-    if unsafe { clips_sys::BatchStar(self.raw, filename.as_ptr() as *const i8) } {
+  pub fn batch_star(&mut self, filename: &str) -> Result<(), ClipsError> {
+    let c_filename = CString::new(filename).unwrap();
+    if unsafe { clips_sys::BatchStar(self.raw, c_filename.as_ptr() as *const i8) } {
       Ok(())
     } else {
-      Err(ClipsError::SomeError.into())
+      Err(ClipsErrorKind::BatchStarError(filename.to_owned()).into())
     }
   }
 }
@@ -537,9 +599,9 @@ pub struct InstanceSlot<'env> {
   pub value: ClipsValue<'env>,
 }
 
-pub fn create_environment() -> Result<Environment, failure::Error> {
+pub fn create_environment() -> Result<Environment, ClipsError> {
   unsafe { clips_sys::CreateEnvironment().as_mut() }
-    .ok_or_else(|| ClipsError::SomeError.into())
+    .ok_or_else(|| ClipsErrorKind::CreateEnvironmentError.into())
     .map(|environment_data| Environment {
       raw: environment_data,
       cleanup: true,
