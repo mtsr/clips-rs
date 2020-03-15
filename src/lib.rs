@@ -95,7 +95,7 @@ impl Environment {
   }
 
   pub fn load_from_str(&mut self, string: &str) -> Result<(), ClipsError> {
-    if unsafe { clips_sys::LoadFromString(self.raw, string.as_ptr() as *const i8, string.len()) } {
+    if unsafe { clips_sys::LoadFromString(self.raw, string.as_ptr() as *const i8, string.len() as u64) } {
       Ok(())
     } else {
       Err(ClipsErrorKind::LoadFromStringError(string.to_owned()).into())
@@ -250,7 +250,7 @@ extern "C" fn udf_handler(
   let closure = unsafe {
     &mut *(raw_context.as_ref().unwrap().context
       // Double Box because Box<FnMut> is a Trait Object i.e. fat pointer
-      as *mut Box<Box<FnMut(&mut Environment, &mut UDFContext) -> ClipsValue<'static>>>)
+      as *mut Box<Box<dyn FnMut(&mut Environment, &mut UDFContext) -> ClipsValue<'static>>>)
   };
   let mut environment = Environment::from_ptr(raw_environment);
   let mut context = UDFContext {
@@ -260,7 +260,7 @@ extern "C" fn udf_handler(
 
   let rust_return_value = closure(&mut environment, &mut context);
   // Set value from clips::ClipsValue on clips_sys::UDFValue
-  unsafe { (*return_value) }.set_from((&environment, rust_return_value));
+  unsafe { *return_value }.set_from((&environment, rust_return_value));
 }
 
 pub struct ArgumentIterator<'env> {
@@ -354,7 +354,7 @@ impl<'env> From<clips_sys::clipsValue> for ClipsValue<'env> {
             unsafe {
               *(*clips_value.__bindgen_anon_1.multifieldValue)
                 .contents
-                .get_unchecked(index)
+                .get_unchecked(index as usize)
             }
             .into()
           })
@@ -405,7 +405,7 @@ impl<'env> From<clips_sys::UDFValue> for ClipsValue<'env> {
         let multifield = unsafe { *union.multifieldValue };
         ClipsValue::Multifield(
           (0..multifield.length)
-            .map(|index| unsafe { *multifield.contents.get_unchecked(index) }.into())
+            .map(|index| unsafe { *multifield.contents.get_unchecked(index as usize) }.into())
             .collect::<Vec<_>>(),
         )
       }
@@ -567,13 +567,13 @@ impl<'env> Instance<'env> {
       clips_sys::ClassSlots(class, &mut slot_list as *mut clips_sys::clipsValue, inherit)
     };
 
-    let num_slots = unsafe { (*slot_list.__bindgen_anon_1.multifieldValue) }.length;
+    let num_slots = unsafe { *slot_list.__bindgen_anon_1.multifieldValue }.length;
 
     (0..num_slots)
       .map(|index| unsafe {
         (*(*slot_list.__bindgen_anon_1.multifieldValue)
           .contents
-          .get_unchecked(index)
+          .get_unchecked(index as usize)
           .__bindgen_anon_1
           .lexemeValue)
           .contents
@@ -600,7 +600,7 @@ impl<'env> Instance<'env> {
 
         InstanceSlot {
           name: unsafe { CStr::from_ptr(*slot_name) }.to_string_lossy(),
-          value: unsafe { (*value) }.into(),
+          value: unsafe { *value }.into(),
         }
       })
       .map(|slot| slot)
